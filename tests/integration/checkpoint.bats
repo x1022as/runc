@@ -33,8 +33,18 @@ function teardown() {
   [ "$status" -eq 0 ]
   [[ "${output}" == *"running"* ]]
 
+  # pre-dump the running container
+  mkdir parent-dir
+  runc --criu "$CRIU" checkpoint --pre-dump --image-path ./parent-dir test_busybox
+  [ "$status" -eq 0 ]
+
+  # busybox should still be running
+  runc state test_busybox
+  [ "$status" -eq 0 ]
+  [[ "${output}" == *"running"* ]]
+
   # checkpoint the running container
-  runc --criu "$CRIU" checkpoint test_busybox
+  runc --criu "$CRIU" checkpoint --parent-path ./parent-dir test_busybox
   # if you are having problems getting criu to work uncomment the following dump:
   #cat /run/opencontainer/containers/test_busybox/criu.work/dump.log
   [ "$status" -eq 0 ]

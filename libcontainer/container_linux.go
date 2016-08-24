@@ -607,6 +607,12 @@ func (c *linuxContainer) Checkpoint(criuOpts *CriuOpts) error {
 		}
 	}
 
+	//pre-dump may need parentImage param to complete iterative migration
+	if criuOpts.ParentImage != "" {
+		rpcOpts.ParentImg = proto.String(criuOpts.ParentImage)
+		rpcOpts.TrackMem = proto.Bool(true)
+	}
+
 	// append optional manage cgroups mode
 	if criuOpts.ManageCgroupsMode != 0 {
 		if err := c.checkCriuVersion("1.7"); err != nil {
@@ -616,39 +622,47 @@ func (c *linuxContainer) Checkpoint(criuOpts *CriuOpts) error {
 		rpcOpts.ManageCgroupsMode = &mode
 	}
 
-	t := criurpc.CriuReqType_DUMP
+	var t criurpc.CriuReqType
+	if criuOpts.PreDump {
+		t = criurpc.CriuReqType_PRE_DUMP
+	} else {
+		t = criurpc.CriuReqType_DUMP
+	}
 	req := &criurpc.CriuReq{
 		Type: &t,
 		Opts: &rpcOpts,
 	}
 
-	for _, m := range c.config.Mounts {
-		switch m.Device {
-		case "bind":
-			c.addCriuDumpMount(req, m)
-			break
-		case "cgroup":
-			binds, err := getCgroupMounts(m)
-			if err != nil {
-				return err
+	//no need to dump these information in pre-dump
+	if !criuOpts.PreDump {
+		for _, m := range c.config.Mounts {
+			switch m.Device {
+			case "bind":
+				c.addCriuDumpMount(req, m)
+				break
+			case "cgroup":
+				binds, err := getCgroupMounts(m)
+				if err != nil {
+					return err
+				}
+				for _, b := range binds {
+					c.addCriuDumpMount(req, b)
+				}
+				break
 			}
-			for _, b := range binds {
-				c.addCriuDumpMount(req, b)
-			}
-			break
 		}
-	}
 
-	// Write the FD info to a file in the image directory
+		// Write the FD info to a file in the image directory
 
-	fdsJSON, err := json.Marshal(c.initProcess.externalDescriptors())
-	if err != nil {
-		return err
-	}
+		fdsJSON, err := json.Marshal(c.initProcess.externalDescriptors())
+		if err != nil {
+			return err
+		}
 
-	err = ioutil.WriteFile(filepath.Join(criuOpts.ImagesDirectory, descriptorsFilename), fdsJSON, 0655)
-	if err != nil {
-		return err
+		err = ioutil.WriteFile(filepath.Join(criuOpts.ImagesDirectory, descriptorsFilename), fdsJSON, 0655)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = c.criuSwrk(nil, req, criuOpts, false)
@@ -950,6 +964,7 @@ func (c *linuxContainer) criuSwrk(process *Process, req *criurpc.CriuReq, opts *
 			continue
 		case t == criurpc.CriuReqType_RESTORE:
 		case t == criurpc.CriuReqType_DUMP:
+		case t == criurpc.CriuReqType_PRE_DUMP:
 			break
 		default:
 			return fmt.Errorf("unable to parse the response %s", resp.String())
@@ -960,12 +975,15 @@ func (c *linuxContainer) criuSwrk(process *Process, req *criurpc.CriuReq, opts *
 
 	// cmd.Wait() waits cmd.goroutines which are used for proxying file descriptors.
 	// Here we want to wait only the CRIU process.
-	st, err := cmd.Process.Wait()
-	if err != nil {
-		return err
-	}
-	if !st.Success() {
-		return fmt.Errorf("criu failed: %s\nlog file: %s", st.String(), logPath)
+	reqType := req.GetType()
+	if reqType != criurpc.CriuReqType_PRE_DUMP {
+		st, err := cmd.Process.Wait()
+		if err != nil {
+			return err
+		}
+		if !st.Success() {
+			return fmt.Errorf("criu failed: %s\nlog file: %s", st.String(), logPath)
+		}
 	}
 	return nil
 }
