@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/opencontainers/runtime-spec/specs-go"
+
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
@@ -59,6 +61,15 @@ func main() {
 	}
 	v = append(v, fmt.Sprintf("spec: %s", specs.Version))
 	app.Version = strings.Join(v, "\n")
+
+	root := "/run/runc"
+	if os.Geteuid() != 0 {
+		runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+		if runtimeDir != "" {
+			root = runtimeDir + "/runc"
+		}
+	}
+
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
 			Name:  "debug",
@@ -76,7 +87,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "root",
-			Value: "/run/runc",
+			Value: root,
 			Usage: "root directory for storage of container state (this should be located in tmpfs)",
 		},
 		cli.StringFlag{
@@ -129,7 +140,20 @@ func main() {
 		}
 		return nil
 	}
+	// If the command returns an error, cli takes upon itself to print
+	// the error on cli.ErrWriter and exit.
+	// Use our own writer here to ensure the log gets sent to the right location.
+	cli.ErrWriter = &FatalWriter{cli.ErrWriter}
 	if err := app.Run(os.Args); err != nil {
 		fatal(err)
 	}
+}
+
+type FatalWriter struct {
+	cliErrWriter io.Writer
+}
+
+func (f *FatalWriter) Write(p []byte) (n int, err error) {
+	logrus.Error(string(p))
+	return f.cliErrWriter.Write(p)
 }

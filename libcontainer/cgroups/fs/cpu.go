@@ -46,7 +46,7 @@ func (s *CpuGroup) ApplyDir(path string, cgroup *configs.Cgroup, pid int) error 
 	}
 	// because we are not using d.join we need to place the pid into the procs file
 	// unlike the other subsystems
-	if err := writeFile(path, "cgroup.procs", strconv.Itoa(pid)); err != nil {
+	if err := cgroups.WriteCgroupProc(path, pid); err != nil {
 		return err
 	}
 
@@ -55,7 +55,7 @@ func (s *CpuGroup) ApplyDir(path string, cgroup *configs.Cgroup, pid int) error 
 
 func (s *CpuGroup) SetRtSched(path string, cgroup *configs.Cgroup) error {
 	if cgroup.Resources.CpuRtPeriod != 0 {
-		if err := writeFile(path, "cpu.rt_period_us", strconv.FormatInt(cgroup.Resources.CpuRtPeriod, 10)); err != nil {
+		if err := writeFile(path, "cpu.rt_period_us", strconv.FormatUint(cgroup.Resources.CpuRtPeriod, 10)); err != nil {
 			return err
 		}
 	}
@@ -69,12 +69,12 @@ func (s *CpuGroup) SetRtSched(path string, cgroup *configs.Cgroup) error {
 
 func (s *CpuGroup) Set(path string, cgroup *configs.Cgroup) error {
 	if cgroup.Resources.CpuShares != 0 {
-		if err := writeFile(path, "cpu.shares", strconv.FormatInt(cgroup.Resources.CpuShares, 10)); err != nil {
+		if err := writeFile(path, "cpu.shares", strconv.FormatUint(cgroup.Resources.CpuShares, 10)); err != nil {
 			return err
 		}
 	}
 	if cgroup.Resources.CpuPeriod != 0 {
-		if err := writeFile(path, "cpu.cfs_period_us", strconv.FormatInt(cgroup.Resources.CpuPeriod, 10)); err != nil {
+		if err := writeFile(path, "cpu.cfs_period_us", strconv.FormatUint(cgroup.Resources.CpuPeriod, 10)); err != nil {
 			return err
 		}
 	}
